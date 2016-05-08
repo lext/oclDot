@@ -11,25 +11,13 @@
 /* ---------------- Macros ---------------- */
 const int VSIZE = 1024*1024*256;
 const int LDIM = 256;
-// This macros was found somewhere on stackoverflow and it is used to release the memory of
-// several arrays
-#define FREE_ALL(...) \
-do { \
-    int i=0;\
-    void *pta[] = {__VA_ARGS__}; \
-    for(i=0; i < sizeof(pta)/sizeof(void*); i++) \
-    { \
-        free(pta[i]); \
-    }\
-} while(0)
-
 
 
 int32_t main(int32_t argc, char** argv) {
-
     int32_t hV1[VSIZE];
     int32_t hV2[VSIZE];
     int64_t hRES[VSIZE/LDIM];
+
     clock_t start, end;
     int64_t checksum = 0;
     int64_t res_sum = 0;
@@ -84,9 +72,8 @@ int32_t main(int32_t argc, char** argv) {
 
     CALL_CL_GUARDED(clFinish, (queue));
 
-    /* ---------------- Performing compputation and retrieving teh result to hRES ---------------- */
+    /* ---------------- Performing compputation and retrieving the result to hRES ---------------- */
 
-    //SET_5_KERNEL_ARGS(knl, dV1, dV2, dRES, VSIZE);
 
     clSetKernelArg(knl, 0, sizeof(cl_mem), &dV1);
     clSetKernelArg(knl, 1, sizeof(cl_mem), &dV2);
@@ -112,7 +99,7 @@ int32_t main(int32_t argc, char** argv) {
         res_sum += hRES[i];
 
     end = clock();
-    printf("Elapsed time for calculation: %.2f s.\n", (double)(end - start) / CLOCKS_PER_SEC);
+    printf("Elapsed time for calculation (OpenCL): %.2f s.\n=============================\n", (double) (end - start) / CLOCKS_PER_SEC);
 
     /* ---------------- Checking the results ---------------- */
 
@@ -120,7 +107,17 @@ int32_t main(int32_t argc, char** argv) {
     printf("Checksum: %ld\n", checksum);
 
     if(res_sum == checksum)
-        printf("Successful computation!\n");
+        printf("=============================\nSuccessful OpenCL computation!\n");
+
+
+    /* ---------------- Cleaning ---------------- */
+
+    CALL_CL_GUARDED(clReleaseMemObject, (dV1));
+    CALL_CL_GUARDED(clReleaseMemObject, (dV2));
+    CALL_CL_GUARDED(clReleaseMemObject, (dRES));
+    CALL_CL_GUARDED(clReleaseKernel, (knl));
+    CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
+    CALL_CL_GUARDED(clReleaseContext, (ctx));
 
 	return 0;
 }
