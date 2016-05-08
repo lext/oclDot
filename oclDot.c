@@ -9,7 +9,8 @@
 
 
 /* ---------------- Macros ---------------- */
-const int VSIZE = 1024*512*512;
+const int VSIZE = 1024*1024*256;
+const int LDIM = 256;
 // This macros was found somewhere on stackoverflow and it is used to release the memory of
 // several arrays
 #define FREE_ALL(...) \
@@ -28,18 +29,27 @@ int32_t main(int32_t argc, char** argv) {
 
     int32_t hV1[VSIZE];
     int32_t hV2[VSIZE];
-    int32_t hRES[VSIZE];
+    int64_t hRES[VSIZE/LDIM];
     clock_t start, end;
+    int64_t checksum = 0;
+    int64_t res_sum = 0;
 
     // OpenCL variables
     cl_context ctx;
     cl_command_queue queue;
     cl_int status;
 
+    size_t ldim[] = { LDIM };
+    size_t gdim[] = {VSIZE};
+    size_t ngr = VSIZE/LDIM;
+
     for (uint32_t i = 0; i < VSIZE; i++) {
         hV1[i] = (i+1);
         hV2[i] = 2;
+        checksum += (i+1)*2;
     }
+
+
 
     /* ---------------- Requesting the device to run the computations ---------------- */
 
@@ -69,17 +79,21 @@ int32_t main(int32_t argc, char** argv) {
         0, NULL, NULL));
 
     // Allocating memory for the result vector
-    cl_mem dRES = clCreateBuffer(ctx, CL_MEM_READ_WRITE, VSIZE*sizeof(int32_t), 0, &status);
+    cl_mem dRES = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(int64_t)*ngr, 0, &status);
     CHECK_CL_ERROR(status, "clCreateBuffer");
 
     CALL_CL_GUARDED(clFinish, (queue));
 
     /* ---------------- Performing compputation and retrieving teh result to hRES ---------------- */
 
-    SET_4_KERNEL_ARGS(knl, dV1, dV2, dRES, VSIZE);
+    //SET_5_KERNEL_ARGS(knl, dV1, dV2, dRES, VSIZE);
 
-    size_t ldim[] = { 512 };
-    size_t gdim[] = {VSIZE};
+    clSetKernelArg(knl, 0, sizeof(cl_mem), &dV1);
+    clSetKernelArg(knl, 1, sizeof(cl_mem), &dV2);
+    clSetKernelArg(knl, 2, sizeof(cl_mem), &dRES);
+    clSetKernelArg(knl, 3, LDIM * sizeof(int64_t), NULL);
+    clSetKernelArg(knl, 4, sizeof(int), &VSIZE);
+
 
     CALL_CL_GUARDED(clEnqueueNDRangeKernel,
         (queue, knl,
@@ -90,24 +104,23 @@ int32_t main(int32_t argc, char** argv) {
 
     CALL_CL_GUARDED(clEnqueueReadBuffer, (
         queue, dRES, CL_TRUE,  0,
-        VSIZE*sizeof(int32_t), hRES,
+        sizeof(int64_t)*ngr, hRES,
         0, NULL, NULL));
+
+    res_sum = 0;
+    for (int i=0; i < ngr; i++)
+        res_sum += hRES[i];
+
     end = clock();
     printf("Elapsed time for calculation: %.2f s.\n", (double)(end - start) / CLOCKS_PER_SEC);
 
     /* ---------------- Checking the results ---------------- */
 
-    for (uint32_t i = 0; i < VSIZE; i++) {
-        if(hRES[i] != 2*(i+1)) {
-            printf("BUG!!!!\n");
-            printf("Should be %d, but %d\n", 2*i, hRES[i]);
-            exit(1);
+    printf("Result: %ld\n", res_sum);
+    printf("Checksum: %ld\n", checksum);
 
-        }
-    }
-
-
-    printf("Successful computation!\n");
+    if(res_sum == checksum)
+        printf("Successful computation!\n");
 
 	return 0;
 }
